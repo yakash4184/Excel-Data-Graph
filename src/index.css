@@ -23,3 +23,23 @@ body {
   padding: 14px;
   background: #f8fafc;
 }
+
+.state-label-icon {
+  background: transparent;
+  border: 0;
+}
+
+.state-label-icon span {
+  display: inline-block;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  border: 1px solid #bfdbfe;
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 4px 8px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(2, 6, 23, 0.16);
+}

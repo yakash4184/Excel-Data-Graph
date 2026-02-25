@@ -11,7 +11,18 @@ import { Bar } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-function GrowthChart({ rows }) {
+function GrowthChart({ rows, enabled }) {
+  if (!enabled) {
+    return (
+      <section className="rounded-2xl bg-white p-6 shadow-panel">
+        <h3 className="text-lg font-semibold text-slate-900">Growth Chart</h3>
+        <p className="mt-3 text-sm text-slate-600">
+          Growth chart needs both sales columns: <strong>Sum of 2024-25</strong> and <strong>Sum of 24th feb.26</strong>.
+        </p>
+      </section>
+    );
+  }
+
   const sorted = [...rows]
     .sort((a, b) => b.growth - a.growth)
     .filter((item) => Number.isFinite(item.growth))

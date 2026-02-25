@@ -1,4 +1,5 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import FileUploader from './components/FileUploader';
 import ResultsTable from './components/ResultsTable';
 import SearchPanel from './components/SearchPanel';
@@ -18,6 +19,14 @@ const formatNumber = (value, digits = 0) =>
 function App() {
   const [allRows, setAllRows] = useState([]);
   const [nullRows, setNullRows] = useState([]);
+  const [headers, setHeaders] = useState([]);
+  const [numericColumns, setNumericColumns] = useState([]);
+  const [availableMetrics, setAvailableMetrics] = useState({
+    hasDistributor: false,
+    hasRetailer: false,
+    hasSalesFY: false,
+    hasSalesCurrent: false,
+  });
   const [stateQuery, setStateQuery] = useState('');
   const [districtQuery, setDistrictQuery] = useState('');
   const [isParsing, setIsParsing] = useState(false);
@@ -47,6 +56,26 @@ function App() {
     return result;
   }, [allRows, stateQuery, districtQuery]);
 
+  const dynamicNumericColumns = useMemo(() => {
+    const blocked = new Set(['Distributor Count', 'Retailer Count', 'Sum of 2024-25', 'Sum of 24th feb.26']);
+    return numericColumns.filter((column) => !blocked.has(column));
+  }, [numericColumns]);
+
+  const additionalColumnTotals = useMemo(() => {
+    if (!filteredRows.length || !dynamicNumericColumns.length) return [];
+
+    return dynamicNumericColumns
+      .map((column) => {
+        const total = filteredRows.reduce((sum, row) => {
+          const value = row.data?.[column];
+          return typeof value === 'number' && Number.isFinite(value) ? sum + value : sum;
+        }, 0);
+
+        return { column, total };
+      })
+      .filter((item) => Number.isFinite(item.total));
+  }, [dynamicNumericColumns, filteredRows]);
+
   const handleParseFile = async (file) => {
     setIsParsing(true);
     setError('');
@@ -58,6 +87,9 @@ function App() {
 
       setAllRows(validRows);
       setNullRows(droppedRows);
+      setHeaders(parsed?.headers || []);
+      setNumericColumns(parsed?.numericColumns || []);
+      setAvailableMetrics(parsed?.availableMetrics || {});
       setStateQuery('');
       setDistrictQuery('');
 
@@ -67,6 +99,14 @@ function App() {
     } catch (parseError) {
       setAllRows([]);
       setNullRows([]);
+      setHeaders([]);
+      setNumericColumns([]);
+      setAvailableMetrics({
+        hasDistributor: false,
+        hasRetailer: false,
+        hasSalesFY: false,
+        hasSalesCurrent: false,
+      });
       setStateQuery('');
       setDistrictQuery('');
       setError(parseError.message || 'Failed to parse file.');
@@ -120,6 +160,7 @@ function App() {
       totalSalesCurrent,
       growth,
       growthPct,
+      rowCount: filteredRows.length,
     };
   }, [filteredRows]);
 
@@ -202,69 +243,96 @@ function App() {
               <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.districts)}</p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">Rows in View</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.rowCount)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-panel">
               <p className="text-sm text-slate-500">Clients (Retailers)</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalRetailers)}</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {availableMetrics.hasRetailer ? formatNumber(summary.totalRetailers) : formatNumber(summary.rowCount)}
+              </p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
               <p className="text-sm text-slate-500">Distributors</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalDistributors)}</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {availableMetrics.hasDistributor ? formatNumber(summary.totalDistributors) : 'N/A'}
+              </p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
               <p className="text-sm text-slate-500">Sales FY 2024-25</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalSalesFY, 2)}</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {availableMetrics.hasSalesFY ? formatNumber(summary.totalSalesFY, 2) : 'N/A'}
+              </p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
               <p className="text-sm text-slate-500">Sales 24 Feb 2026</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalSalesCurrent, 2)}</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {availableMetrics.hasSalesCurrent ? formatNumber(summary.totalSalesCurrent, 2) : 'N/A'}
+              </p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
               <p className="text-sm text-slate-500">Absolute Growth</p>
               <p className={`mt-1 text-2xl font-bold ${summary.growth >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                {summary.growth >= 0 ? '+' : ''}
-                {formatNumber(summary.growth, 2)}
-              </p>
-            </div>
-            <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">Growth %</p>
-              <p className={`mt-1 text-2xl font-bold ${summary.growthPct >= 0 || summary.growthPct === null ? 'text-emerald-700' : 'text-rose-700'}`}>
-                {summary.growthPct === null ? 'N/A' : `${summary.growthPct >= 0 ? '+' : ''}${formatNumber(summary.growthPct, 2)}%`}
+                {availableMetrics.hasSalesFY && availableMetrics.hasSalesCurrent
+                  ? `${summary.growth >= 0 ? '+' : ''}${formatNumber(summary.growth, 2)}`
+                  : 'N/A'}
               </p>
             </div>
           </section>
         )}
 
+        {summary && additionalColumnTotals.length > 0 && (
+          <section className="rounded-2xl bg-white p-6 shadow-panel">
+            <h3 className="text-lg font-semibold text-slate-900">Additional Numeric Columns (Auto Detected)</h3>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {additionalColumnTotals.map((item) => (
+                <div key={item.column} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">{item.column}</p>
+                  <p className="mt-1 text-xl font-bold text-slate-900">{formatNumber(item.total, 2)}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {hasData && (
-          <Suspense
-            fallback={
-              <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                Loading map and visualizations...
-              </div>
-            }
-          >
-            <DistrictMap
-              rows={filteredRows}
-              selectedState={stateQuery}
-              selectedDistrict={districtQuery}
-              onSelectDistrict={handleMapDistrictSelect}
-            />
-          </Suspense>
+          <AppErrorBoundary fallbackTitle="Map rendering error">
+            <Suspense
+              fallback={
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                  Loading map and visualizations...
+                </div>
+              }
+            >
+              <DistrictMap
+                rows={filteredRows}
+                selectedState={stateQuery}
+                selectedDistrict={districtQuery}
+                onSelectDistrict={handleMapDistrictSelect}
+              />
+            </Suspense>
+          </AppErrorBoundary>
         )}
 
         {filteredRows.length > 0 && (
           <>
-            <Suspense
-              fallback={
-                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                  Loading chart visualizations...
+            <AppErrorBoundary fallbackTitle="Chart rendering error">
+              <Suspense
+                fallback={
+                  <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                    Loading chart visualizations...
+                  </div>
+                }
+              >
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <CasesBarChart rows={filteredRows} />
+                  <GrowthChart rows={filteredRows} enabled={availableMetrics.hasSalesFY && availableMetrics.hasSalesCurrent} />
                 </div>
-              }
-            >
-              <div className="grid gap-6 xl:grid-cols-2">
-                <CasesBarChart rows={filteredRows} />
-                <GrowthChart rows={filteredRows} />
-              </div>
-            </Suspense>
-            <ResultsTable rows={filteredRows} />
+              </Suspense>
+            </AppErrorBoundary>
+            <AppErrorBoundary fallbackTitle="Table rendering error">
+              <ResultsTable rows={filteredRows} headers={headers} />
+            </AppErrorBoundary>
           </>
         )}
       </div>

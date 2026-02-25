@@ -1,4 +1,4 @@
-import { REQUIRED_COLUMNS } from '../constants/columns';
+import { OPTIONAL_METRIC_COLUMNS, REQUIRED_COLUMNS } from '../constants/columns';
 
 const COLUMN = {
   state: 'State Name',
@@ -11,29 +11,42 @@ const COLUMN = {
 
 const normalizeHeader = (value) => String(value ?? '').trim();
 
-const parseNumber = (value) => {
-  if (value === '' || value === null || value === undefined) return 0;
+const parseAsNumber = (value) => {
+  if (value === '' || value === null || value === undefined) return null;
   if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
 
-  const cleaned = String(value)
-    .replace(/,/g, '')
-    .trim();
+  const cleaned = String(value).replace(/,/g, '').trim();
+  if (!cleaned) return null;
 
-  if (!cleaned) return 0;
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : NaN;
 };
 
+const parseKnownMetric = (value) => {
+  const parsed = parseAsNumber(value);
+  if (parsed === null) return 0;
+  return parsed;
+};
+
+const parseCell = (value) => {
+  const parsed = parseAsNumber(value);
+  if (parsed === null) {
+    return typeof value === 'string' ? value.trim() : value ?? '';
+  }
+  if (Number.isNaN(parsed)) {
+    return typeof value === 'string' ? value.trim() : value;
+  }
+  return parsed;
+};
+
 export const validateHeaders = (headerRow) => {
   const normalizedHeaders = headerRow.map(normalizeHeader).filter(Boolean);
-
   const missing = REQUIRED_COLUMNS.filter((col) => !normalizedHeaders.includes(col));
-  const extra = normalizedHeaders.filter((col) => !REQUIRED_COLUMNS.includes(col));
 
   return {
-    isValid: missing.length === 0 && extra.length === 0 && normalizedHeaders.length === REQUIRED_COLUMNS.length,
+    isValid: missing.length === 0,
     missing,
-    extra,
+    normalizedHeaders,
   };
 };
 
@@ -59,89 +72,135 @@ const parseWorkbookBuffer = async (arrayBuffer) => {
 
   const headerValidation = validateHeaders(headerRow);
   if (!headerValidation.isValid) {
-    const details = [
-      headerValidation.missing.length ? `Missing: ${headerValidation.missing.join(', ')}` : '',
-      headerValidation.extra.length ? `Unexpected: ${headerValidation.extra.join(', ')}` : '',
-    ]
-      .filter(Boolean)
-      .join(' | ');
-
-    throw new Error(`Column mismatch. Required columns: ${REQUIRED_COLUMNS.join(', ')}. ${details}`.trim());
+    throw new Error(`Missing required columns: ${headerValidation.missing.join(', ')}`);
   }
 
+  const headers = headerValidation.normalizedHeaders;
   const rawRows = XLSX.utils.sheet_to_json(worksheet, {
     defval: '',
     raw: false,
   });
 
   if (!rawRows.length) {
-    return { rows: [], nullRows: [] };
+    return {
+      rows: [],
+      nullRows: [],
+      headers,
+      numericColumns: [],
+      availableMetrics: {
+        hasDistributor: headers.includes(COLUMN.distributors),
+        hasRetailer: headers.includes(COLUMN.retailers),
+        hasSalesFY: headers.includes(COLUMN.salesFY),
+        hasSalesCurrent: headers.includes(COLUMN.salesCurrent),
+      },
+    };
   }
 
   const nullRows = [];
+  const numericColumns = new Set();
   let lastState = '';
 
-  const validRows = rawRows.reduce((acc, row, index) => {
-    const rowIndex = index + 2;
+  const rows = rawRows.reduce((acc, row, index) => {
+    const rowNumber = index + 2;
+    const rowData = {};
 
-    const stateValue = String(row[COLUMN.state] ?? '').trim();
-    if (stateValue) {
-      lastState = stateValue;
+    headers.forEach((header) => {
+      let value = row[header];
+
+      if (header === COLUMN.state) {
+        const candidate = String(value ?? '').trim();
+        value = candidate || lastState;
+      }
+
+      if (header === COLUMN.district) {
+        value = String(value ?? '').trim();
+      }
+
+      const parsedValue = parseCell(value);
+      rowData[header] = parsedValue;
+
+      if (typeof parsedValue === 'number' && Number.isFinite(parsedValue)) {
+        numericColumns.add(header);
+      }
+    });
+
+    const state = String(rowData[COLUMN.state] ?? '').trim();
+    const district = String(rowData[COLUMN.district] ?? '').trim();
+
+    if (state) {
+      lastState = state;
+      rowData[COLUMN.state] = state;
     }
 
-    const normalizedRow = {
-      state: stateValue || lastState,
-      district: String(row[COLUMN.district] ?? '').trim(),
-      distributorCount: parseNumber(row[COLUMN.distributors]),
-      salesFY: parseNumber(row[COLUMN.salesFY]),
-      salesCurrent: parseNumber(row[COLUMN.salesCurrent]),
-      retailerCount: parseNumber(row[COLUMN.retailers]),
-    };
-
-    const hasNumericError =
-      !Number.isFinite(normalizedRow.distributorCount) ||
-      !Number.isFinite(normalizedRow.salesFY) ||
-      !Number.isFinite(normalizedRow.salesCurrent) ||
-      !Number.isFinite(normalizedRow.retailerCount);
-
-    if (!normalizedRow.district) {
+    if (!district) {
       nullRows.push({
-        rowNumber: rowIndex,
+        rowNumber,
         reason: 'District Name missing',
-        state: normalizedRow.state || '(blank)',
+        state: state || '(blank)',
       });
       return acc;
     }
 
-    if (!normalizedRow.state) {
+    if (!state) {
       nullRows.push({
-        rowNumber: rowIndex,
+        rowNumber,
         reason: 'State Name missing',
         state: '(blank)',
+        district,
       });
       return acc;
     }
 
-    if (hasNumericError) {
+    const distributorCount = parseKnownMetric(rowData[COLUMN.distributors]);
+    const retailerCount = parseKnownMetric(rowData[COLUMN.retailers]);
+    const salesFY = parseKnownMetric(rowData[COLUMN.salesFY]);
+    const salesCurrent = parseKnownMetric(rowData[COLUMN.salesCurrent]);
+
+    if (
+      Number.isNaN(distributorCount) ||
+      Number.isNaN(retailerCount) ||
+      Number.isNaN(salesFY) ||
+      Number.isNaN(salesCurrent)
+    ) {
       nullRows.push({
-        rowNumber: rowIndex,
-        reason: 'Numeric fields invalid',
-        state: normalizedRow.state,
-        district: normalizedRow.district,
+        rowNumber,
+        reason: 'Numeric metric value invalid',
+        state,
+        district,
       });
       return acc;
     }
 
-    normalizedRow.growth = normalizedRow.salesCurrent - normalizedRow.salesFY;
-    normalizedRow.growthPct = normalizedRow.salesFY === 0 ? null : (normalizedRow.growth / normalizedRow.salesFY) * 100;
+    const growth = salesCurrent - salesFY;
+    const growthPct = salesFY === 0 ? null : (growth / salesFY) * 100;
 
-    acc.push(normalizedRow);
+    acc.push({
+      state,
+      district,
+      distributorCount,
+      retailerCount,
+      salesFY,
+      salesCurrent,
+      growth,
+      growthPct,
+      data: rowData,
+    });
+
     return acc;
   }, []);
 
   return {
-    rows: validRows,
+    rows,
     nullRows,
+    headers,
+    numericColumns: [...numericColumns],
+    availableMetrics: {
+      hasDistributor: headers.includes(COLUMN.distributors),
+      hasRetailer: headers.includes(COLUMN.retailers),
+      hasSalesFY: headers.includes(COLUMN.salesFY),
+      hasSalesCurrent: headers.includes(COLUMN.salesCurrent),
+      optionalMetricColumnsPresent: OPTIONAL_METRIC_COLUMNS.filter((name) => headers.includes(name)),
+    },
   };
 };
 

@@ -14,22 +14,33 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 function CasesBarChart({ rows }) {
   const sorted = [...rows].sort((a, b) => b.salesCurrent - a.salesCurrent).slice(0, 15);
 
+  const showSalesComparison = sorted.some((item) => item.salesFY > 0 || item.salesCurrent > 0);
+
   const data = {
     labels: sorted.map((item) => item.district),
-    datasets: [
-      {
-        label: 'Sales 2024-25',
-        data: sorted.map((item) => item.salesFY),
-        backgroundColor: '#93c5fd',
-        borderRadius: 6,
-      },
-      {
-        label: 'Sales 24 Feb 2026',
-        data: sorted.map((item) => item.salesCurrent),
-        backgroundColor: '#0284c7',
-        borderRadius: 6,
-      },
-    ],
+    datasets: showSalesComparison
+      ? [
+          {
+            label: 'Sales 2024-25',
+            data: sorted.map((item) => item.salesFY),
+            backgroundColor: '#93c5fd',
+            borderRadius: 6,
+          },
+          {
+            label: 'Sales 24 Feb 2026',
+            data: sorted.map((item) => item.salesCurrent),
+            backgroundColor: '#0284c7',
+            borderRadius: 6,
+          },
+        ]
+      : [
+          {
+            label: 'Clients (Retailers)',
+            data: sorted.map((item) => item.retailerCount),
+            backgroundColor: '#0284c7',
+            borderRadius: 6,
+          },
+        ],
   };
 
   const options = {
@@ -39,7 +50,9 @@ function CasesBarChart({ rows }) {
       legend: { position: 'top' },
       title: {
         display: true,
-        text: 'Selected Area: Sales Comparison by District',
+        text: showSalesComparison
+          ? 'Selected Area: Sales Comparison by District'
+          : 'Selected Area: Client Count by District',
       },
       tooltip: {
         callbacks: {

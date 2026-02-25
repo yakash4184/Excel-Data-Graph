@@ -1,4 +1,4 @@
-import { REQUIRED_COLUMNS } from '../constants/columns';
+import { DEFAULT_SAMPLE_COLUMNS } from '../constants/columns';
 
 const SAMPLE_ROWS = [
   {
@@ -46,7 +46,7 @@ const SAMPLE_ROWS = [
 export const downloadSampleWorkbook = async () => {
   const XLSX = await import('xlsx');
   const worksheet = XLSX.utils.json_to_sheet(SAMPLE_ROWS, {
-    header: REQUIRED_COLUMNS,
+    header: DEFAULT_SAMPLE_COLUMNS,
   });
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'SalesReport');
