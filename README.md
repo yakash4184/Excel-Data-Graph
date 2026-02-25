@@ -1,43 +1,37 @@
-# State District Dashboard (React + Vite)
+# District Wise Sales Super Visual Dashboard (React + Vite)
 
-A frontend-only, production-ready dashboard for uploading `.xlsx` / `.csv` files, validating strict columns, searching by state/district/client/mobile, and visualizing results in table, chart, and map.
+Frontend-only dashboard for your district sales report.
 
-## Required columns
+## Required columns (exact)
 
-- State
-- District
-- Client Name
-- Mobile Number
-- Population
-- Cases
-- Vaccinated
-- Latitude
-- Longitude
+- State Name
+- District Name
+- Distributor Count
+- Sum of 2024-25
+- Sum of 24th feb.26
+- Retailer Count
 
-## Install and run
+## Features
+
+- Upload `.xlsx` / `.csv`
+- Column validation + row-level validation
+- Auto-fill state names when Excel has blank merged rows
+- State / district filtering
+- KPI cards (sales, growth, distributor, retailer)
+- Charts: sales comparison + top growth districts
+- Detailed district performance table
+- `Download Sample Excel` button
+
+## Run
 
 ```bash
 npm install
 npm start
 ```
 
-## Build for production
+## Build
 
 ```bash
 npm run build
 npm run preview
 ```
-
-## Sample data
-
-- Ready CSV: `sample-client-sales-data.csv`
-- In-app button: `Download Sample Excel`
-
-## Deploy on Vercel (Free)
-
-1. Push this folder to GitHub.
-2. Import repo in Vercel.
-3. Vercel auto-detects Vite and builds with `npm run build`.
-4. Output directory: `dist`.
-
-`vercel.json` includes SPA rewrite support.

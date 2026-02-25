@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import FileUploader from './components/FileUploader';
 import ResultsTable from './components/ResultsTable';
 import SearchPanel from './components/SearchPanel';
@@ -8,58 +8,71 @@ import { downloadSampleWorkbook } from './utils/sampleFile';
 const CasesBarChart = lazy(() => import('./components/CasesBarChart'));
 const DistrictMap = lazy(() => import('./components/DistrictMap'));
 
+const formatNumber = (value, digits = 0) =>
+  Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+
 function App() {
   const [allRows, setAllRows] = useState([]);
   const [filteredRows, setFilteredRows] = useState([]);
+  const [nullRows, setNullRows] = useState([]);
   const [stateQuery, setStateQuery] = useState('');
   const [districtQuery, setDistrictQuery] = useState('');
-  const [clientNameQuery, setClientNameQuery] = useState('');
-  const [mobileQuery, setMobileQuery] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('Upload a dataset to begin searching.');
-  const [hasSearched, setHasSearched] = useState(false);
+  const [info, setInfo] = useState('Upload file karein. Data automatic parse ho jayega.');
 
   const canSearch = allRows.length > 0;
+
   const stateOptions = useMemo(
-    () => [...new Set(allRows.map((row) => row.State))].sort((a, b) => a.localeCompare(b)),
+    () => [...new Set(allRows.map((row) => row.state))].sort((a, b) => a.localeCompare(b)),
     [allRows]
   );
 
   const districtOptions = useMemo(() => {
-    if (!stateQuery) return [];
-    return [...new Set(allRows.filter((row) => row.State === stateQuery).map((row) => row.District))].sort((a, b) =>
+    if (!stateQuery) return [...new Set(allRows.map((row) => row.district))].sort((a, b) => a.localeCompare(b));
+    return [...new Set(allRows.filter((row) => row.state === stateQuery).map((row) => row.district))].sort((a, b) =>
       a.localeCompare(b)
     );
   }, [allRows, stateQuery]);
 
-  const getFilteredRows = (stateValue, districtValue, clientValue, mobileValue) => {
-    const normalizedClientValue = clientValue.toLowerCase();
-    const normalizedMobileValue = mobileValue.replace(/[()\s-]/g, '');
+  const applyFilter = (rows, selectedState, selectedDistrict) => {
+    let result = rows;
+    if (selectedState) {
+      result = result.filter((row) => row.state === selectedState);
+    }
+    if (selectedDistrict) {
+      result = result.filter((row) => row.district === selectedDistrict);
+    }
+    return result;
+  };
 
-    return allRows.filter((row) => {
-      if (row.State !== stateValue) return false;
-      if (districtValue && row.District !== districtValue) return false;
-      if (normalizedClientValue && !row['Client Name'].toLowerCase().includes(normalizedClientValue)) return false;
-      if (normalizedMobileValue && !row['Mobile Number'].includes(normalizedMobileValue)) return false;
-      return true;
-    });
+  const setRowsAndResetFilters = (payload, messagePrefix) => {
+    const rows = payload?.rows || [];
+    const droppedRows = payload?.nullRows || [];
+    setAllRows(rows);
+    setNullRows(droppedRows);
+    setStateQuery('');
+    setDistrictQuery('');
+    setFilteredRows(rows);
+    const summaryMessage = `${messagePrefix || 'Data loaded successfully.'} Valid rows: ${rows.length}`;
+    const nullMessage = droppedRows.length ? ` | Null/blank rows: ${droppedRows.length}` : '';
+    setInfo(`${summaryMessage}${nullMessage}`);
   };
 
   const handleParseFile = async (file) => {
     setIsParsing(true);
     setError('');
-    setInfo('');
-    setHasSearched(false);
 
     try {
-      const rows = await parseUploadedFile(file);
-      setAllRows(rows);
-      setFilteredRows([]);
-      setInfo(rows.length ? `File parsed successfully. ${rows.length} rows loaded.` : 'File loaded but contains no data rows.');
+      const parsed = await parseUploadedFile(file);
+      setRowsAndResetFilters(parsed, `${file.name} parsed successfully.`);
     } catch (parseError) {
       setAllRows([]);
       setFilteredRows([]);
+      setNullRows([]);
       setError(parseError.message || 'Failed to parse file.');
     } finally {
       setIsParsing(false);
@@ -67,66 +80,50 @@ function App() {
   };
 
   const handleSearch = () => {
+    if (!canSearch) return;
     setError('');
-    setHasSearched(true);
-
-    const stateValue = stateQuery.trim();
-    const districtValue = districtQuery.trim();
-    const clientValue = clientNameQuery.trim();
-    const mobileValue = mobileQuery.trim();
-
-    if (!stateValue) {
-      setFilteredRows([]);
-      setError('State is required to search.');
-      return;
-    }
-
-    setFilteredRows(getFilteredRows(stateValue, districtValue, clientValue, mobileValue));
+    const nextRows = applyFilter(allRows, stateQuery, districtQuery);
+    setFilteredRows(nextRows);
   };
 
-  const noDataFound = hasSearched && !error && filteredRows.length === 0;
-
-  useEffect(() => {
-    if (!allRows.length) return;
-
-    const stateValue = stateQuery.trim();
-    const districtValue = districtQuery.trim();
-    const clientValue = clientNameQuery.trim();
-    const mobileValue = mobileQuery.trim();
-
-    if (!stateValue) {
-      setFilteredRows([]);
-      setHasSearched(false);
-      return;
-    }
-
+  const handleReset = () => {
+    setStateQuery('');
+    setDistrictQuery('');
+    setFilteredRows(allRows);
     setError('');
-    setHasSearched(true);
-
-    setFilteredRows(getFilteredRows(stateValue, districtValue, clientValue, mobileValue));
-  }, [allRows, stateQuery, districtQuery, clientNameQuery, mobileQuery]);
+  };
 
   const summary = useMemo(() => {
     if (!filteredRows.length) return null;
-    const totalClients = filteredRows.length;
-    const uniqueDistricts = new Set(filteredRows.map((row) => row.District)).size;
-    const districtClientCounts = filteredRows.reduce((acc, row) => {
-      acc[row.District] = (acc[row.District] || 0) + 1;
-      return acc;
-    }, {});
+
+    const totalDistributors = filteredRows.reduce((sum, row) => sum + row.distributorCount, 0);
+    const totalRetailers = filteredRows.reduce((sum, row) => sum + row.retailerCount, 0);
+    const totalSalesFY = filteredRows.reduce((sum, row) => sum + row.salesFY, 0);
+    const totalSalesCurrent = filteredRows.reduce((sum, row) => sum + row.salesCurrent, 0);
+    const growth = totalSalesCurrent - totalSalesFY;
+    const growthPct = totalSalesFY === 0 ? null : (growth / totalSalesFY) * 100;
 
     return {
-      totalClients,
-      uniqueDistricts,
-      districtClientCounts: Object.entries(districtClientCounts).sort(([a], [b]) => a.localeCompare(b)),
+      states: new Set(filteredRows.map((row) => row.state)).size,
+      districts: filteredRows.length,
+      totalDistributors,
+      totalRetailers,
+      totalSalesFY,
+      totalSalesCurrent,
+      growth,
+      growthPct,
     };
   }, [filteredRows]);
+
+  const noDataFound = canSearch && filteredRows.length === 0;
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">State & District Sales Client Dashboard</h1>
-        <p className="mt-2 text-slate-600">State select karke district, client name ya mobile se exact client data search karein.</p>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">District Wise Sales Super Visual Dashboard</h1>
+        <p className="mt-2 text-slate-600">
+          State / district filter ke saath sales, growth, distributor aur retailer analytics ek jagah.
+        </p>
       </header>
 
       <div className="space-y-6">
@@ -139,8 +136,6 @@ function App() {
         <SearchPanel
           stateQuery={stateQuery}
           districtQuery={districtQuery}
-          clientNameQuery={clientNameQuery}
-          mobileQuery={mobileQuery}
           stateOptions={stateOptions}
           districtOptions={districtOptions}
           onStateChange={(value) => {
@@ -148,66 +143,98 @@ function App() {
             setDistrictQuery('');
           }}
           onDistrictChange={setDistrictQuery}
-          onClientNameChange={setClientNameQuery}
-          onMobileChange={setMobileQuery}
           onSearch={handleSearch}
+          onReset={handleReset}
           disabled={!canSearch || isParsing}
         />
 
         {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!error && info && <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">{info}</div>}
-        {noDataFound && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">No Data Found</div>
-        )}
-
-        {summary && (
-          <section className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">Total Clients</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.totalClients.toLocaleString()}</p>
-            </div>
-            <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">Selected State</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{stateQuery}</p>
-            </div>
-            <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">{districtQuery ? 'Selected District' : 'Districts Covered'}</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{districtQuery || summary.uniqueDistricts.toLocaleString()}</p>
-            </div>
-          </section>
-        )}
-
-        {summary && (
-          <section className="rounded-2xl bg-white p-6 shadow-panel">
-            <h3 className="text-lg font-semibold text-slate-900">District-wise Clients</h3>
-            <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full border-collapse text-sm">
+        {!error && nullRows.length > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="font-semibold">Null Data Rows (upload allowed)</p>
+            <p className="mt-1">These rows were skipped from visuals/charts, but file uploaded successfully.</p>
+            <div className="mt-2 overflow-x-auto">
+              <table className="min-w-full border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-100 text-left text-slate-700">
-                    <th className="px-3 py-2 font-semibold">District</th>
-                    <th className="px-3 py-2 font-semibold">Clients</th>
+                  <tr className="bg-amber-100 text-left">
+                    <th className="px-2 py-1 font-semibold">Row</th>
+                    <th className="px-2 py-1 font-semibold">State</th>
+                    <th className="px-2 py-1 font-semibold">District</th>
+                    <th className="px-2 py-1 font-semibold">Issue</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.districtClientCounts.map(([districtName, clientCount]) => (
-                    <tr key={districtName} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="px-3 py-2">{districtName}</td>
-                      <td className="px-3 py-2">{clientCount.toLocaleString()}</td>
+                  {nullRows.slice(0, 20).map((item) => (
+                    <tr key={`${item.rowNumber}-${item.reason}`} className="border-b border-amber-200">
+                      <td className="px-2 py-1">{item.rowNumber}</td>
+                      <td className="px-2 py-1">{item.state || '(blank)'}</td>
+                      <td className="px-2 py-1">{item.district || '(blank)'}</td>
+                      <td className="px-2 py-1">{item.reason}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+            {nullRows.length > 20 && <p className="mt-1">+{nullRows.length - 20} more null rows</p>}
+          </div>
+        )}
+        {noDataFound && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+            No Data Found
+          </div>
+        )}
+
+        {summary && (
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">States Covered</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.states)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">Districts</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.districts)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">Distributors</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalDistributors)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">Retailers</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalRetailers)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">Sales FY 2024-25</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalSalesFY, 2)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">Sales 24 Feb 2026</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalSalesCurrent, 2)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">Absolute Growth</p>
+              <p className={`mt-1 text-2xl font-bold ${summary.growth >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                {summary.growth >= 0 ? '+' : ''}
+                {formatNumber(summary.growth, 2)}
+              </p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">Growth %</p>
+              <p className={`mt-1 text-2xl font-bold ${summary.growthPct >= 0 || summary.growthPct === null ? 'text-emerald-700' : 'text-rose-700'}`}>
+                {summary.growthPct === null
+                  ? 'N/A'
+                  : `${summary.growthPct >= 0 ? '+' : ''}${formatNumber(summary.growthPct, 2)}%`}
+              </p>
             </div>
           </section>
         )}
 
         {filteredRows.length > 0 && (
           <>
-            <ResultsTable rows={filteredRows} />
             <Suspense
               fallback={
                 <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                  Loading visualizations...
+                  Visuals loading...
                 </div>
               }
             >
@@ -216,6 +243,7 @@ function App() {
                 <DistrictMap rows={filteredRows} />
               </div>
             </Suspense>
+            <ResultsTable rows={filteredRows} />
           </>
         )}
       </div>

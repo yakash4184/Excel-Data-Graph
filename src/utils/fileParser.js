@@ -1,33 +1,28 @@
 import { REQUIRED_COLUMNS } from '../constants/columns';
 
-const NUMERIC_FIELDS = ['Population', 'Cases', 'Vaccinated', 'Latitude', 'Longitude'];
+const COLUMN = {
+  state: 'State Name',
+  district: 'District Name',
+  distributors: 'Distributor Count',
+  salesFY: 'Sum of 2024-25',
+  salesCurrent: 'Sum of 24th feb.26',
+  retailers: 'Retailer Count',
+};
 
 const normalizeHeader = (value) => String(value ?? '').trim();
 
 const parseNumber = (value) => {
-  if (typeof value === 'number') return value;
-  const cleaned = String(value ?? '')
+  if (value === '' || value === null || value === undefined) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+
+  const cleaned = String(value)
     .replace(/,/g, '')
     .trim();
+
+  if (!cleaned) return 0;
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : NaN;
 };
-
-const normalizeMobile = (value) => {
-  if (value === null || value === undefined) return '';
-
-  let raw = typeof value === 'number' ? String(Math.trunc(value)) : String(value).trim();
-  if (/e/i.test(raw)) {
-    const converted = Number(raw);
-    if (Number.isFinite(converted)) {
-      raw = String(Math.trunc(converted));
-    }
-  }
-
-  return raw.replace(/[()\s-]/g, '');
-};
-
-const isValidMobile = (value) => /^\+?\d{8,15}$/.test(value);
 
 export const validateHeaders = (headerRow) => {
   const normalizedHeaders = headerRow.map(normalizeHeader).filter(Boolean);
@@ -39,26 +34,14 @@ export const validateHeaders = (headerRow) => {
     isValid: missing.length === 0 && extra.length === 0 && normalizedHeaders.length === REQUIRED_COLUMNS.length,
     missing,
     extra,
-    normalizedHeaders,
   };
 };
 
-export const parseUploadedFile = async (file) => {
-  if (!file) {
-    throw new Error('Please select a file.');
-  }
-
-  const fileName = file.name.toLowerCase();
-  const isSupported = fileName.endsWith('.xlsx') || fileName.endsWith('.csv');
-  if (!isSupported) {
-    throw new Error('Unsupported file type. Please upload a .xlsx or .csv file.');
-  }
-
+const parseWorkbookBuffer = async (arrayBuffer) => {
   const XLSX = await import('xlsx');
-  const arrayBuffer = await file.arrayBuffer();
+
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
   const sheetName = workbook.SheetNames[0];
-
   if (!sheetName) {
     throw new Error('No worksheet found in uploaded file.');
   }
@@ -71,7 +54,7 @@ export const parseUploadedFile = async (file) => {
   });
 
   if (!headerRow.length) {
-    throw new Error('Header row is missing. Add required columns and try again.');
+    throw new Error('Header row is missing.');
   }
 
   const headerValidation = validateHeaders(headerRow);
@@ -92,48 +75,89 @@ export const parseUploadedFile = async (file) => {
   });
 
   if (!rawRows.length) {
-    return [];
+    return { rows: [], nullRows: [] };
   }
 
-  const invalidRows = [];
-  const rows = rawRows.map((row, index) => {
-    const clean = {};
-    REQUIRED_COLUMNS.forEach((col) => {
-      clean[col] = row[col];
-    });
+  const nullRows = [];
+  let lastState = '';
 
-    clean.State = String(clean.State ?? '').trim();
-    clean.District = String(clean.District ?? '').trim();
-    clean['Client Name'] = String(clean['Client Name'] ?? '').trim();
-    clean['Mobile Number'] = normalizeMobile(clean['Mobile Number']);
-
-    NUMERIC_FIELDS.forEach((field) => {
-      clean[field] = parseNumber(clean[field]);
-    });
-
+  const validRows = rawRows.reduce((acc, row, index) => {
     const rowIndex = index + 2;
-    if (!clean.State || !clean.District) {
-      invalidRows.push(`${rowIndex}: State/District required`);
-    }
-    if (!clean['Client Name']) {
-      invalidRows.push(`${rowIndex}: Client Name required`);
-    }
-    if (!isValidMobile(clean['Mobile Number'])) {
-      invalidRows.push(`${rowIndex}: Mobile Number must be 8-15 digits (optional + prefix)`);
-    }
-    if (!Number.isFinite(clean.Latitude) || !Number.isFinite(clean.Longitude)) {
-      invalidRows.push(`${rowIndex}: Latitude/Longitude must be numeric`);
-    }
-    if (!Number.isFinite(clean.Cases) || !Number.isFinite(clean.Population) || !Number.isFinite(clean.Vaccinated)) {
-      invalidRows.push(`${rowIndex}: Population/Cases/Vaccinated must be numeric`);
+
+    const stateValue = String(row[COLUMN.state] ?? '').trim();
+    if (stateValue) {
+      lastState = stateValue;
     }
 
-    return clean;
-  });
+    const normalizedRow = {
+      state: stateValue || lastState,
+      district: String(row[COLUMN.district] ?? '').trim(),
+      distributorCount: parseNumber(row[COLUMN.distributors]),
+      salesFY: parseNumber(row[COLUMN.salesFY]),
+      salesCurrent: parseNumber(row[COLUMN.salesCurrent]),
+      retailerCount: parseNumber(row[COLUMN.retailers]),
+    };
 
-  if (invalidRows.length) {
-    throw new Error(`Data validation failed. Invalid rows: ${invalidRows.slice(0, 8).join(' | ')}`);
+    const hasNumericError =
+      !Number.isFinite(normalizedRow.distributorCount) ||
+      !Number.isFinite(normalizedRow.salesFY) ||
+      !Number.isFinite(normalizedRow.salesCurrent) ||
+      !Number.isFinite(normalizedRow.retailerCount);
+
+    if (!normalizedRow.district) {
+      nullRows.push({
+        rowNumber: rowIndex,
+        reason: 'District Name missing',
+        state: normalizedRow.state || '(blank)',
+      });
+      return acc;
+    }
+
+    if (!normalizedRow.state) {
+      nullRows.push({
+        rowNumber: rowIndex,
+        reason: 'State Name missing',
+        state: '(blank)',
+      });
+      return acc;
+    }
+
+    if (hasNumericError) {
+      nullRows.push({
+        rowNumber: rowIndex,
+        reason: 'Numeric fields invalid',
+        state: normalizedRow.state,
+        district: normalizedRow.district,
+      });
+      return acc;
+    }
+
+    normalizedRow.growth = normalizedRow.salesCurrent - normalizedRow.salesFY;
+    normalizedRow.growthPct = normalizedRow.salesFY === 0 ? null : (normalizedRow.growth / normalizedRow.salesFY) * 100;
+
+    acc.push(normalizedRow);
+    return acc;
+  }, []);
+
+  return {
+    rows: validRows,
+    nullRows,
+  };
+};
+
+export const parseUploadedFile = async (file) => {
+  if (!file) {
+    throw new Error('Please select a file.');
   }
 
-  return rows;
+  const fileName = file.name.toLowerCase();
+  const isSupported = fileName.endsWith('.xlsx') || fileName.endsWith('.csv');
+  if (!isSupported) {
+    throw new Error('Unsupported file type. Please upload .xlsx or .csv file.');
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  return parseWorkbookBuffer(arrayBuffer);
 };
+
+export const parseFromArrayBuffer = parseWorkbookBuffer;

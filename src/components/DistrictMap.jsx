@@ -1,80 +1,63 @@
-import { useEffect } from 'react';
-import L from 'leaflet';
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+import {
+  CategoryScale,
+  Chart as ChartJS,
+  Legend,
+  LinearScale,
+  Title,
+  Tooltip,
+  BarElement,
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
 
-// Fix default marker icon paths in Vite builds.
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIcon2x,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-});
-
-function FitMapToData({ rows }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!rows.length) return;
-
-    const points = rows.map((row) => [row.Latitude, row.Longitude]);
-
-    if (points.length === 1) {
-      map.setView(points[0], 8, { animate: true });
-      return;
-    }
-
-    const bounds = L.latLngBounds(points);
-    map.fitBounds(bounds, { padding: [30, 30] });
-  }, [map, rows]);
-
-  return null;
-}
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 function DistrictMap({ rows }) {
-  const center = rows.length ? [rows[0].Latitude, rows[0].Longitude] : [22.9734, 78.6569];
+  const sorted = [...rows]
+    .sort((a, b) => b.growth - a.growth)
+    .filter((item) => Number.isFinite(item.growth))
+    .slice(0, 12);
+
+  const data = {
+    labels: sorted.map((item) => item.district),
+    datasets: [
+      {
+        label: 'Absolute Growth',
+        data: sorted.map((item) => item.growth),
+        backgroundColor: sorted.map((item) => (item.growth >= 0 ? '#10b981' : '#ef4444')),
+        borderRadius: 6,
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      title: {
+        display: true,
+        text: 'Top District Growth (Current vs FY 2024-25)',
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `Growth: ${Number(ctx.raw).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: {
+          callback: (value) => Number(value).toLocaleString(),
+        },
+      },
+    },
+  };
 
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
-      <h2 className="text-xl font-semibold text-slate-900">District Map</h2>
-      <div className="mt-4 h-[380px] overflow-hidden rounded-xl border border-slate-200">
-        <MapContainer center={center} zoom={5} scrollWheelZoom className="h-full w-full">
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-
-          <FitMapToData rows={rows} />
-
-          {rows.map((row, index) => (
-            <Marker key={`${row.State}-${row.District}-${index}`} position={[row.Latitude, row.Longitude]}>
-              <Popup>
-                <div className="text-sm">
-                  <div>
-                    <span className="font-semibold">State:</span> {row.State}
-                  </div>
-                  <div>
-                    <span className="font-semibold">District:</span> {row.District}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Client:</span> {row['Client Name']}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Mobile:</span> {row['Mobile Number']}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Cases:</span> {row.Cases.toLocaleString()}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Population:</span> {row.Population.toLocaleString()}
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
-        </MapContainer>
+      <div className="h-[360px]">
+        <Bar data={data} options={options} />
       </div>
     </section>
   );

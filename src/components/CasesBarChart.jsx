@@ -12,21 +12,20 @@ import { Bar } from 'react-chartjs-2';
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 function CasesBarChart({ rows }) {
-  const groupedClients = rows.reduce((acc, row) => {
-    const key = row.District;
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-
-  const districts = Object.keys(groupedClients);
-  const clients = districts.map((district) => groupedClients[district]);
+  const sorted = [...rows].sort((a, b) => b.salesCurrent - a.salesCurrent).slice(0, 15);
 
   const data = {
-    labels: districts,
+    labels: sorted.map((item) => item.district),
     datasets: [
       {
-        label: 'Clients',
-        data: clients,
+        label: 'Sales 2024-25',
+        data: sorted.map((item) => item.salesFY),
+        backgroundColor: '#93c5fd',
+        borderRadius: 6,
+      },
+      {
+        label: 'Sales 24 Feb 2026',
+        data: sorted.map((item) => item.salesCurrent),
         backgroundColor: '#0284c7',
         borderRadius: 6,
       },
@@ -37,22 +36,30 @@ function CasesBarChart({ rows }) {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { display: false },
+      legend: { position: 'top' },
       title: {
         display: true,
-        text: 'District-wise Clients',
+        text: 'Top Districts: Sales Comparison',
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.raw).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+        },
       },
     },
     scales: {
       y: {
         beginAtZero: true,
+        ticks: {
+          callback: (value) => Number(value).toLocaleString(),
+        },
       },
     },
   };
 
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
-      <div className="h-[320px]">
+      <div className="h-[360px]">
         <Bar data={data} options={options} />
       </div>
     </section>
