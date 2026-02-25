@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import FileUploader from './components/FileUploader';
 import ResultsTable from './components/ResultsTable';
 import SearchPanel from './components/SearchPanel';
@@ -13,12 +13,38 @@ function App() {
   const [filteredRows, setFilteredRows] = useState([]);
   const [stateQuery, setStateQuery] = useState('');
   const [districtQuery, setDistrictQuery] = useState('');
+  const [clientNameQuery, setClientNameQuery] = useState('');
+  const [mobileQuery, setMobileQuery] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('Upload a dataset to begin searching.');
   const [hasSearched, setHasSearched] = useState(false);
 
   const canSearch = allRows.length > 0;
+  const stateOptions = useMemo(
+    () => [...new Set(allRows.map((row) => row.State))].sort((a, b) => a.localeCompare(b)),
+    [allRows]
+  );
+
+  const districtOptions = useMemo(() => {
+    if (!stateQuery) return [];
+    return [...new Set(allRows.filter((row) => row.State === stateQuery).map((row) => row.District))].sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [allRows, stateQuery]);
+
+  const getFilteredRows = (stateValue, districtValue, clientValue, mobileValue) => {
+    const normalizedClientValue = clientValue.toLowerCase();
+    const normalizedMobileValue = mobileValue.replace(/[()\s-]/g, '');
+
+    return allRows.filter((row) => {
+      if (row.State !== stateValue) return false;
+      if (districtValue && row.District !== districtValue) return false;
+      if (normalizedClientValue && !row['Client Name'].toLowerCase().includes(normalizedClientValue)) return false;
+      if (normalizedMobileValue && !row['Mobile Number'].includes(normalizedMobileValue)) return false;
+      return true;
+    });
+  };
 
   const handleParseFile = async (file) => {
     setIsParsing(true);
@@ -44,8 +70,10 @@ function App() {
     setError('');
     setHasSearched(true);
 
-    const stateValue = stateQuery.trim().toLowerCase();
-    const districtValue = districtQuery.trim().toLowerCase();
+    const stateValue = stateQuery.trim();
+    const districtValue = districtQuery.trim();
+    const clientValue = clientNameQuery.trim();
+    const mobileValue = mobileQuery.trim();
 
     if (!stateValue) {
       setFilteredRows([]);
@@ -53,36 +81,52 @@ function App() {
       return;
     }
 
-    const stateMatches = allRows.filter((row) => row.State.toLowerCase() === stateValue);
-
-    if (!districtValue) {
-      setFilteredRows(stateMatches);
-      return;
-    }
-
-    const exactDistrictMatches = stateMatches.filter((row) => row.District.toLowerCase() === districtValue);
-    setFilteredRows(exactDistrictMatches);
+    setFilteredRows(getFilteredRows(stateValue, districtValue, clientValue, mobileValue));
   };
 
   const noDataFound = hasSearched && !error && filteredRows.length === 0;
 
+  useEffect(() => {
+    if (!allRows.length) return;
+
+    const stateValue = stateQuery.trim();
+    const districtValue = districtQuery.trim();
+    const clientValue = clientNameQuery.trim();
+    const mobileValue = mobileQuery.trim();
+
+    if (!stateValue) {
+      setFilteredRows([]);
+      setHasSearched(false);
+      return;
+    }
+
+    setError('');
+    setHasSearched(true);
+
+    setFilteredRows(getFilteredRows(stateValue, districtValue, clientValue, mobileValue));
+  }, [allRows, stateQuery, districtQuery, clientNameQuery, mobileQuery]);
+
   const summary = useMemo(() => {
     if (!filteredRows.length) return null;
-    const totalCases = filteredRows.reduce((sum, row) => sum + row.Cases, 0);
-    const totalPopulation = filteredRows.reduce((sum, row) => sum + row.Population, 0);
+    const totalClients = filteredRows.length;
+    const uniqueDistricts = new Set(filteredRows.map((row) => row.District)).size;
+    const districtClientCounts = filteredRows.reduce((acc, row) => {
+      acc[row.District] = (acc[row.District] || 0) + 1;
+      return acc;
+    }, {});
 
     return {
-      districts: filteredRows.length,
-      totalCases,
-      totalPopulation,
+      totalClients,
+      uniqueDistricts,
+      districtClientCounts: Object.entries(districtClientCounts).sort(([a], [b]) => a.localeCompare(b)),
     };
   }, [filteredRows]);
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">State and District Health Dashboard</h1>
-        <p className="mt-2 text-slate-600">Frontend-only React app with XLSX parsing, filtering, chart insights, and map visualization.</p>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">State & District Sales Client Dashboard</h1>
+        <p className="mt-2 text-slate-600">State select karke district, client name ya mobile se exact client data search karein.</p>
       </header>
 
       <div className="space-y-6">
@@ -95,8 +139,17 @@ function App() {
         <SearchPanel
           stateQuery={stateQuery}
           districtQuery={districtQuery}
-          onStateChange={setStateQuery}
+          clientNameQuery={clientNameQuery}
+          mobileQuery={mobileQuery}
+          stateOptions={stateOptions}
+          districtOptions={districtOptions}
+          onStateChange={(value) => {
+            setStateQuery(value);
+            setDistrictQuery('');
+          }}
           onDistrictChange={setDistrictQuery}
+          onClientNameChange={setClientNameQuery}
+          onMobileChange={setMobileQuery}
           onSearch={handleSearch}
           disabled={!canSearch || isParsing}
         />
@@ -110,16 +163,40 @@ function App() {
         {summary && (
           <section className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">Districts</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.districts}</p>
+              <p className="text-sm text-slate-500">Total Clients</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.totalClients.toLocaleString()}</p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">Total Cases</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.totalCases.toLocaleString()}</p>
+              <p className="text-sm text-slate-500">Selected State</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{stateQuery}</p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">Total Population</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.totalPopulation.toLocaleString()}</p>
+              <p className="text-sm text-slate-500">{districtQuery ? 'Selected District' : 'Districts Covered'}</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{districtQuery || summary.uniqueDistricts.toLocaleString()}</p>
+            </div>
+          </section>
+        )}
+
+        {summary && (
+          <section className="rounded-2xl bg-white p-6 shadow-panel">
+            <h3 className="text-lg font-semibold text-slate-900">District-wise Clients</h3>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-100 text-left text-slate-700">
+                    <th className="px-3 py-2 font-semibold">District</th>
+                    <th className="px-3 py-2 font-semibold">Clients</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.districtClientCounts.map(([districtName, clientCount]) => (
+                    <tr key={districtName} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="px-3 py-2">{districtName}</td>
+                      <td className="px-3 py-2">{clientCount.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
         )}

@@ -1,5 +1,14 @@
 import { REQUIRED_COLUMNS } from '../constants/columns';
 
+const NUMERIC_COLUMNS = new Set(['Population', 'Cases', 'Vaccinated']);
+
+const formatCellValue = (column, value) => {
+  if (NUMERIC_COLUMNS.has(column) && typeof value === 'number' && Number.isFinite(value)) {
+    return value.toLocaleString();
+  }
+  return value;
+};
+
 function ResultsTable({ rows }) {
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
@@ -19,13 +28,11 @@ function ResultsTable({ rows }) {
           <tbody>
             {rows.map((row, idx) => (
               <tr key={`${row.State}-${row.District}-${idx}`} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-3 py-2">{row.State}</td>
-                <td className="px-3 py-2">{row.District}</td>
-                <td className="px-3 py-2">{row.Population.toLocaleString()}</td>
-                <td className="px-3 py-2">{row.Cases.toLocaleString()}</td>
-                <td className="px-3 py-2">{row.Vaccinated.toLocaleString()}</td>
-                <td className="px-3 py-2">{row.Latitude}</td>
-                <td className="px-3 py-2">{row.Longitude}</td>
+                {REQUIRED_COLUMNS.map((column) => (
+                  <td key={`${row.State}-${row.District}-${row['Mobile Number']}-${column}`} className="px-3 py-2">
+                    {formatCellValue(column, row[column])}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>

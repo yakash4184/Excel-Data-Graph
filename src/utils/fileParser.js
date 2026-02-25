@@ -13,6 +13,22 @@ const parseNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : NaN;
 };
 
+const normalizeMobile = (value) => {
+  if (value === null || value === undefined) return '';
+
+  let raw = typeof value === 'number' ? String(Math.trunc(value)) : String(value).trim();
+  if (/e/i.test(raw)) {
+    const converted = Number(raw);
+    if (Number.isFinite(converted)) {
+      raw = String(Math.trunc(converted));
+    }
+  }
+
+  return raw.replace(/[()\s-]/g, '');
+};
+
+const isValidMobile = (value) => /^\+?\d{8,15}$/.test(value);
+
 export const validateHeaders = (headerRow) => {
   const normalizedHeaders = headerRow.map(normalizeHeader).filter(Boolean);
 
@@ -88,6 +104,8 @@ export const parseUploadedFile = async (file) => {
 
     clean.State = String(clean.State ?? '').trim();
     clean.District = String(clean.District ?? '').trim();
+    clean['Client Name'] = String(clean['Client Name'] ?? '').trim();
+    clean['Mobile Number'] = normalizeMobile(clean['Mobile Number']);
 
     NUMERIC_FIELDS.forEach((field) => {
       clean[field] = parseNumber(clean[field]);
@@ -96,6 +114,12 @@ export const parseUploadedFile = async (file) => {
     const rowIndex = index + 2;
     if (!clean.State || !clean.District) {
       invalidRows.push(`${rowIndex}: State/District required`);
+    }
+    if (!clean['Client Name']) {
+      invalidRows.push(`${rowIndex}: Client Name required`);
+    }
+    if (!isValidMobile(clean['Mobile Number'])) {
+      invalidRows.push(`${rowIndex}: Mobile Number must be 8-15 digits (optional + prefix)`);
     }
     if (!Number.isFinite(clean.Latitude) || !Number.isFinite(clean.Longitude)) {
       invalidRows.push(`${rowIndex}: Latitude/Longitude must be numeric`);

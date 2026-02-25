@@ -59,6 +59,12 @@ function DistrictMap({ rows }) {
                     <span className="font-semibold">District:</span> {row.District}
                   </div>
                   <div>
+                    <span className="font-semibold">Client:</span> {row['Client Name']}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Mobile:</span> {row['Mobile Number']}
+                  </div>
+                  <div>
                     <span className="font-semibold">Cases:</span> {row.Cases.toLocaleString()}
                   </div>
                   <div>

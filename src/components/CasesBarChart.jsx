@@ -12,21 +12,21 @@ import { Bar } from 'react-chartjs-2';
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 function CasesBarChart({ rows }) {
-  const groupedCases = rows.reduce((acc, row) => {
+  const groupedClients = rows.reduce((acc, row) => {
     const key = row.District;
-    acc[key] = (acc[key] || 0) + row.Cases;
+    acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
 
-  const districts = Object.keys(groupedCases);
-  const cases = districts.map((district) => groupedCases[district]);
+  const districts = Object.keys(groupedClients);
+  const clients = districts.map((district) => groupedClients[district]);
 
   const data = {
     labels: districts,
     datasets: [
       {
-        label: 'Cases',
-        data: cases,
+        label: 'Clients',
+        data: clients,
         backgroundColor: '#0284c7',
         borderRadius: 6,
       },
@@ -40,7 +40,7 @@ function CasesBarChart({ rows }) {
       legend: { display: false },
       title: {
         display: true,
-        text: 'Cases by District',
+        text: 'District-wise Clients',
       },
     },
     scales: {

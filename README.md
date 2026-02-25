@@ -1,11 +1,13 @@
 # State District Dashboard (React + Vite)
 
-A frontend-only, production-ready dashboard for uploading `.xlsx` / `.csv` files, validating strict columns, searching by state/district, and visualizing results in table, chart, and map.
+A frontend-only, production-ready dashboard for uploading `.xlsx` / `.csv` files, validating strict columns, searching by state/district/client/mobile, and visualizing results in table, chart, and map.
 
 ## Required columns
 
 - State
 - District
+- Client Name
+- Mobile Number
 - Population
 - Cases
 - Vaccinated
@@ -16,7 +18,7 @@ A frontend-only, production-ready dashboard for uploading `.xlsx` / `.csv` files
 
 ```bash
 npm install
-npm run dev
+npm start
 ```
 
 ## Build for production
@@ -25,6 +27,11 @@ npm run dev
 npm run build
 npm run preview
 ```
+
+## Sample data
+
+- Ready CSV: `sample-client-sales-data.csv`
+- In-app button: `Download Sample Excel`
 
 ## Deploy on Vercel (Free)
 
