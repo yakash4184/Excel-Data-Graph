@@ -1,6 +1,6 @@
 # District Wise Sales Super Visual Dashboard (React + Vite)
 
-Frontend-only dashboard for your district sales report.
+Frontend-only dashboard for India state/district sales and client coverage reporting.
 
 ## Required columns (exact)
 
@@ -16,7 +16,9 @@ Frontend-only dashboard for your district sales report.
 - Upload `.xlsx` / `.csv`
 - Column validation + row-level validation
 - Auto-fill state names when Excel has blank merged rows
-- State / district filtering
+- India map with district markers
+- Full-screen map option
+- State / district drill-down filtering
 - KPI cards (sales, growth, distributor, retailer)
 - Charts: sales comparison + top growth districts
 - Detailed district performance table

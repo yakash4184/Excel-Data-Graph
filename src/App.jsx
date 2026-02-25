@@ -6,6 +6,7 @@ import { parseUploadedFile } from './utils/fileParser';
 import { downloadSampleWorkbook } from './utils/sampleFile';
 
 const CasesBarChart = lazy(() => import('./components/CasesBarChart'));
+const GrowthChart = lazy(() => import('./components/GrowthChart'));
 const DistrictMap = lazy(() => import('./components/DistrictMap'));
 
 const formatNumber = (value, digits = 0) =>
@@ -16,15 +17,14 @@ const formatNumber = (value, digits = 0) =>
 
 function App() {
   const [allRows, setAllRows] = useState([]);
-  const [filteredRows, setFilteredRows] = useState([]);
   const [nullRows, setNullRows] = useState([]);
   const [stateQuery, setStateQuery] = useState('');
   const [districtQuery, setDistrictQuery] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('Upload file karein. Data automatic parse ho jayega.');
+  const [info, setInfo] = useState('Upload your Excel/CSV file to start the dashboard.');
 
-  const canSearch = allRows.length > 0;
+  const hasData = allRows.length > 0;
 
   const stateOptions = useMemo(
     () => [...new Set(allRows.map((row) => row.state))].sort((a, b) => a.localeCompare(b)),
@@ -32,35 +32,20 @@ function App() {
   );
 
   const districtOptions = useMemo(() => {
-    if (!stateQuery) return [...new Set(allRows.map((row) => row.district))].sort((a, b) => a.localeCompare(b));
-    return [...new Set(allRows.filter((row) => row.state === stateQuery).map((row) => row.district))].sort((a, b) =>
-      a.localeCompare(b)
-    );
+    const sourceRows = stateQuery ? allRows.filter((row) => row.state === stateQuery) : allRows;
+    return [...new Set(sourceRows.map((row) => row.district))].sort((a, b) => a.localeCompare(b));
   }, [allRows, stateQuery]);
 
-  const applyFilter = (rows, selectedState, selectedDistrict) => {
-    let result = rows;
-    if (selectedState) {
-      result = result.filter((row) => row.state === selectedState);
+  const filteredRows = useMemo(() => {
+    let result = allRows;
+    if (stateQuery) {
+      result = result.filter((row) => row.state === stateQuery);
     }
-    if (selectedDistrict) {
-      result = result.filter((row) => row.district === selectedDistrict);
+    if (districtQuery) {
+      result = result.filter((row) => row.district === districtQuery);
     }
     return result;
-  };
-
-  const setRowsAndResetFilters = (payload, messagePrefix) => {
-    const rows = payload?.rows || [];
-    const droppedRows = payload?.nullRows || [];
-    setAllRows(rows);
-    setNullRows(droppedRows);
-    setStateQuery('');
-    setDistrictQuery('');
-    setFilteredRows(rows);
-    const summaryMessage = `${messagePrefix || 'Data loaded successfully.'} Valid rows: ${rows.length}`;
-    const nullMessage = droppedRows.length ? ` | Null/blank rows: ${droppedRows.length}` : '';
-    setInfo(`${summaryMessage}${nullMessage}`);
-  };
+  }, [allRows, stateQuery, districtQuery]);
 
   const handleParseFile = async (file) => {
     setIsParsing(true);
@@ -68,11 +53,22 @@ function App() {
 
     try {
       const parsed = await parseUploadedFile(file);
-      setRowsAndResetFilters(parsed, `${file.name} parsed successfully.`);
+      const validRows = parsed?.rows || [];
+      const droppedRows = parsed?.nullRows || [];
+
+      setAllRows(validRows);
+      setNullRows(droppedRows);
+      setStateQuery('');
+      setDistrictQuery('');
+
+      const summary = `${file.name} uploaded successfully. Valid rows: ${validRows.length}`;
+      const nullSummary = droppedRows.length ? ` | Null/blank rows skipped: ${droppedRows.length}` : '';
+      setInfo(`${summary}${nullSummary}`);
     } catch (parseError) {
       setAllRows([]);
-      setFilteredRows([]);
       setNullRows([]);
+      setStateQuery('');
+      setDistrictQuery('');
       setError(parseError.message || 'Failed to parse file.');
     } finally {
       setIsParsing(false);
@@ -80,17 +76,29 @@ function App() {
   };
 
   const handleSearch = () => {
-    if (!canSearch) return;
+    if (!hasData) return;
+
+    const scope = districtQuery
+      ? `${districtQuery}, ${stateQuery || 'Selected State'}`
+      : stateQuery || 'All States';
+
+    setInfo(`Showing report for: ${scope}`);
     setError('');
-    const nextRows = applyFilter(allRows, stateQuery, districtQuery);
-    setFilteredRows(nextRows);
   };
 
   const handleReset = () => {
     setStateQuery('');
     setDistrictQuery('');
-    setFilteredRows(allRows);
     setError('');
+    if (hasData) {
+      setInfo('Showing report for all uploaded data.');
+    }
+  };
+
+  const handleMapDistrictSelect = (stateName, districtName) => {
+    setStateQuery(stateName || '');
+    setDistrictQuery(districtName || '');
+    setInfo(`Focused on district: ${districtName}, ${stateName}`);
   };
 
   const summary = useMemo(() => {
@@ -105,7 +113,7 @@ function App() {
 
     return {
       states: new Set(filteredRows.map((row) => row.state)).size,
-      districts: filteredRows.length,
+      districts: new Set(filteredRows.map((row) => row.district)).size,
       totalDistributors,
       totalRetailers,
       totalSalesFY,
@@ -115,23 +123,19 @@ function App() {
     };
   }, [filteredRows]);
 
-  const noDataFound = canSearch && filteredRows.length === 0;
+  const noDataFound = hasData && filteredRows.length === 0;
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">District Wise Sales Super Visual Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">India Sales & Client Coverage Dashboard</h1>
         <p className="mt-2 text-slate-600">
-          State / district filter ke saath sales, growth, distributor aur retailer analytics ek jagah.
+          Track state-wise and district-wise client coverage, sales performance, growth, and detailed report data.
         </p>
       </header>
 
       <div className="space-y-6">
-        <FileUploader
-          onParseFile={handleParseFile}
-          isParsing={isParsing}
-          onDownloadSample={downloadSampleWorkbook}
-        />
+        <FileUploader onParseFile={handleParseFile} isParsing={isParsing} onDownloadSample={downloadSampleWorkbook} />
 
         <SearchPanel
           stateQuery={stateQuery}
@@ -145,15 +149,16 @@ function App() {
           onDistrictChange={setDistrictQuery}
           onSearch={handleSearch}
           onReset={handleReset}
-          disabled={!canSearch || isParsing}
+          disabled={!hasData || isParsing}
         />
 
         {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!error && info && <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">{info}</div>}
+
         {!error && nullRows.length > 0 && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <p className="font-semibold">Null Data Rows (upload allowed)</p>
-            <p className="mt-1">These rows were skipped from visuals/charts, but file uploaded successfully.</p>
+            <p className="mt-1">These rows were skipped from map/charts/table but the upload was successful.</p>
             <div className="mt-2 overflow-x-auto">
               <table className="min-w-full border-collapse text-xs">
                 <thead>
@@ -179,29 +184,30 @@ function App() {
             {nullRows.length > 20 && <p className="mt-1">+{nullRows.length - 20} more null rows</p>}
           </div>
         )}
+
         {noDataFound && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
-            No Data Found
+            No Data Found for the selected state/district.
           </div>
         )}
 
         {summary && (
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">States Covered</p>
+              <p className="text-sm text-slate-500">States in View</p>
               <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.states)}</p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">Districts</p>
+              <p className="text-sm text-slate-500">Districts in View</p>
               <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.districts)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-panel">
+              <p className="text-sm text-slate-500">Clients (Retailers)</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalRetailers)}</p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
               <p className="text-sm text-slate-500">Distributors</p>
               <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalDistributors)}</p>
-            </div>
-            <div className="rounded-xl bg-white p-4 shadow-panel">
-              <p className="text-sm text-slate-500">Retailers</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{formatNumber(summary.totalRetailers)}</p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-panel">
               <p className="text-sm text-slate-500">Sales FY 2024-25</p>
@@ -221,12 +227,27 @@ function App() {
             <div className="rounded-xl bg-white p-4 shadow-panel">
               <p className="text-sm text-slate-500">Growth %</p>
               <p className={`mt-1 text-2xl font-bold ${summary.growthPct >= 0 || summary.growthPct === null ? 'text-emerald-700' : 'text-rose-700'}`}>
-                {summary.growthPct === null
-                  ? 'N/A'
-                  : `${summary.growthPct >= 0 ? '+' : ''}${formatNumber(summary.growthPct, 2)}%`}
+                {summary.growthPct === null ? 'N/A' : `${summary.growthPct >= 0 ? '+' : ''}${formatNumber(summary.growthPct, 2)}%`}
               </p>
             </div>
           </section>
+        )}
+
+        {hasData && (
+          <Suspense
+            fallback={
+              <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                Loading map and visualizations...
+              </div>
+            }
+          >
+            <DistrictMap
+              rows={filteredRows}
+              selectedState={stateQuery}
+              selectedDistrict={districtQuery}
+              onSelectDistrict={handleMapDistrictSelect}
+            />
+          </Suspense>
         )}
 
         {filteredRows.length > 0 && (
@@ -234,13 +255,13 @@ function App() {
             <Suspense
               fallback={
                 <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                  Visuals loading...
+                  Loading chart visualizations...
                 </div>
               }
             >
               <div className="grid gap-6 xl:grid-cols-2">
                 <CasesBarChart rows={filteredRows} />
-                <DistrictMap rows={filteredRows} />
+                <GrowthChart rows={filteredRows} />
               </div>
             </Suspense>
             <ResultsTable rows={filteredRows} />

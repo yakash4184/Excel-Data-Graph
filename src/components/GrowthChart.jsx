@@ -11,22 +11,19 @@ import { Bar } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-function CasesBarChart({ rows }) {
-  const sorted = [...rows].sort((a, b) => b.salesCurrent - a.salesCurrent).slice(0, 15);
+function GrowthChart({ rows }) {
+  const sorted = [...rows]
+    .sort((a, b) => b.growth - a.growth)
+    .filter((item) => Number.isFinite(item.growth))
+    .slice(0, 12);
 
   const data = {
     labels: sorted.map((item) => item.district),
     datasets: [
       {
-        label: 'Sales 2024-25',
-        data: sorted.map((item) => item.salesFY),
-        backgroundColor: '#93c5fd',
-        borderRadius: 6,
-      },
-      {
-        label: 'Sales 24 Feb 2026',
-        data: sorted.map((item) => item.salesCurrent),
-        backgroundColor: '#0284c7',
+        label: 'Absolute Growth',
+        data: sorted.map((item) => item.growth),
+        backgroundColor: sorted.map((item) => (item.growth >= 0 ? '#10b981' : '#ef4444')),
         borderRadius: 6,
       },
     ],
@@ -35,21 +32,21 @@ function CasesBarChart({ rows }) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    indexAxis: 'y',
     plugins: {
-      legend: { position: 'top' },
+      legend: { display: false },
       title: {
         display: true,
-        text: 'Selected Area: Sales Comparison by District',
+        text: 'Selected Area: Top District Growth',
       },
       tooltip: {
         callbacks: {
-          label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.raw).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+          label: (ctx) => `Growth: ${Number(ctx.raw).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
         },
       },
     },
     scales: {
-      y: {
-        beginAtZero: true,
+      x: {
         ticks: {
           callback: (value) => Number(value).toLocaleString(),
         },
@@ -66,4 +63,4 @@ function CasesBarChart({ rows }) {
   );
 }
 
-export default CasesBarChart;
+export default GrowthChart;

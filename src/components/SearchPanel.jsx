@@ -11,8 +11,10 @@ function SearchPanel({
 }) {
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
-      <h2 className="text-xl font-semibold text-slate-900">Smart Filter</h2>
-      <p className="mt-1 text-sm text-slate-600">State aur district dono optional filters hain.</p>
+      <h2 className="text-xl font-semibold text-slate-900">Filter Report Area</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Select a state to view all client points in that state. Select a district to focus only that district.
+      </p>
 
       <form
         className="mt-4 grid gap-4 md:grid-cols-[1fr_1fr_auto_auto]"
@@ -52,7 +54,7 @@ function SearchPanel({
           disabled={disabled}
           className="rounded-lg bg-slate-900 px-5 py-2 font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
-          Search
+          Apply
         </button>
 
         <button
